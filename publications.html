@@ -4,16 +4,113 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Publications</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #fff;
+            color: #222;
+            margin: 24px;
+        }
+        .container {
+            border: 1px solid #aaa;
+            background: #fff;
+            padding: 32px 24px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .top-right-link {
+            text-align: right;
+            margin-bottom: 4px;
+        }
+        .jump-links {
+            font-size: 1em;
+            margin-bottom: 14px;
+        }
+        .jump-links ul {
+            margin: 0 0 0 20px;
+            padding: 0;
+        }
+        .jump-links li {
+            margin-bottom: 3px;
+        }
+        hr {
+            margin: 26px 0 24px 0;
+            border-top: 1px solid #bbb;
+        }
+        h2 {
+            font-weight: bold;
+            margin-top: 32px;
+            margin-bottom: 14px;
+            font-size: 1.3em;
+        }
+        ul.pubs {
+            margin-left: 0;
+            padding-left: 18px;
+        }
+        ul.pubs li {
+            margin-bottom: 22px;
+        }
+        @media (max-width: 680px) {
+            .container {
+                padding: 12px 2vw;
+            }
+            .top-right-link {
+                text-align: left;
+            }
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>My Publications</h1>
-    </header>
-    <main>
-        <p>List your publications here.</p>
-    </main>
-    <footer>
-        <p>&copy; 2025 Your Name. All rights reserved.</p>
-    </footer>
+    <div class="container">
+        <div class="top-right-link">
+            <a href="index.html">Home</a>
+        </div>
+        <div class="jump-links">
+            <ul>
+                <li><a href="#journal">Jump to Journal Papers</a></li>
+                <li><a href="#conference">Jump to Conference Papers</a></li>
+                <li><a href="#working">Jump to Working Papers</a></li>
+            </ul>
+        </div>
+        <hr>
+        <h2 id="journal">Journal Papers</h2>
+        <ul class="pubs">
+            <li>
+                Author A, Author B, <b>Your Name</b>,<br>
+                Title of the Journal Paper,<br>
+                <i>Journal Name</i>, to appear.<br>
+                DOI: <a href="#">10.1000/j.journal.2025.001</a>
+            </li>
+            <li>
+                Author C, <b>Your Name</b>, Author D,<br>
+                Title of Another Journal Paper,<br>
+                <i>Some Journal</i>, 10(2):111-123, 2025.<br>
+                DOI: <a href="#">10.1000/somejournal.2025.456</a>
+            </li>
+        </ul>
+
+        <h2 id="conference">Conference Papers</h2>
+        <ul class="pubs">
+            <li>
+                Author E, <b>Your Name</b>, Author F,<br>
+                Paper Title at Conference,<br>
+                <i>Conf. on Great Research</i>, 2025.
+            </li>
+            <li>
+                Author G, Author H, <b>Your Name</b>,<br>
+                Another Conf Paper Title,<br>
+                <i>Top Conference on Subject</i>, 2024.
+            </li>
+        </ul>
+
+        <h2 id="working">Working Papers</h2>
+        <ul class="pubs">
+            <li>
+                <b>Your Name</b>, Author I,<br>
+                A Working Paper Title,<br>
+                Working Paper, 2025.
+            </li>
+        </ul>
+    </div>
 </body>
 </html>
