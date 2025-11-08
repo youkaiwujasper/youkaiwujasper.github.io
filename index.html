@@ -30,14 +30,13 @@
             min-width: 300px;
         }
         .header-img {
-            width: 100%;
-            max-width: 200px;
-            height: auto;
+            width: 200px;       /* 固定宽度 */
+            height: 150px;      /* 固定高度 */
+            object-fit: contain; /* 等比缩放，完整显示图片 */
+            border: 1px solid #ccc;
+            background: #eee;    /* 空白区域背景 */
             margin-left: 24px;
             margin-top: 8px;
-            object-fit: cover;
-            border: 1px solid #ccc;
-            background: #eee;
         }
         h1 {
             font-size: 2.6em;
