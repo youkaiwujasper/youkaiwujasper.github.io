@@ -3,23 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Youkai Wu(吴友凯) Homepage</title>
-    <link rel="stylesheet" href="assets/css/style.css">
+    <title>Your Name's Homepage</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #fff;
+            color: #111;
+            margin: 24px;
+        }
+        .container {
+            border: 1px solid #aaa;
+            background: #fff;
+            padding: 32px 24px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .header-area {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .header-text {
+            flex: 1;
+            min-width: 300px;
+        }
+        .header-img {
+            width: 200px;
+            height: 150px;
+            margin-left: 24px;
+            margin-top: 8px;
+            object-fit: cover;
+            border: 1px solid #ccc;
+            background: #eee;
+        }
+        h1 {
+            font-size: 2.6em;
+            font-weight: bold;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        hr {
+            margin: 24px 0;
+            border-top: 1px solid #bbb;
+            border-bottom: none;
+        }
+        h2 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        ul {
+            margin-top: 0;
+        }
+        .section {
+            margin-bottom: 24px;
+        }
+        a {
+            color: #0044cc;
+            text-decoration: underline;
+        }
+        .lang-switch {
+            font-size: 0.95em;
+            margin-left: 12px;
+        }
+        .links-title {
+            font-weight: bold;
+            color: #2200cc;
+            font-size: 1.25em;
+            text-decoration: underline;
+        }
+        @media (max-width: 680px) {
+            .container {
+                padding: 12px 2vw;
+            }
+            .header-area {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .header-img {
+                margin-left: 0;
+                margin-top: 18px;
+                width: 100%;
+                max-width: 350px;
+                height: auto;
+            }
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>Welcome to My Personal Homepage</h1>
-        <p>Hi, I’m Jasper! Welcome to my personal website.</p>
-    </header>
-    <nav>
-        <ul>
-            <li><a href="cv.pdf">CV</a></li>
-            <li><a href="publications.html">Publications</a></li>
-            <li><a href="mailto:your-email@example.com">Contact</a></li>
-        </ul>
-    </nav>
-    <footer>
-        <p>&copy; 2025 youkaiwujasper All rights reserved.</p>
-    </footer>
+    <div class="container">
+        <div class="header-area">
+            <div class="header-text">
+                <h1>Your Name</h1>
+                <div>Title, Your Institution (or Company)</div>
+                <div class="lang-switch">
+                    [<a href="#">English</a> | <a href="#">Other Language</a>]
+                </div>
+            </div>
+            <img class="header-img" src="https://placekitten.com/200/150" alt="Profile/Research image">
+        </div>
+        <hr>
+
+        <div class="section">
+            <h2>Research</h2>
+            <ul>
+                <li><a href="#">Recent Research</a>
+                    <ul>
+                        <li>Research Topic 1</li>
+                        <li>Research Topic 2</li>
+                    </ul>
+                </li>
+                <li><a href="#">Software</a>
+                    <ul>
+                        <li>Example Software</li>
+                    </ul>
+                </li>
+                <li><a href="#">Tutorials</a></li>
+                <li>Research Interests:
+                    <ul>
+                        <li>Optimization, Algorithms, Machine Learning, etc.</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+
+        <hr>
+
+        <div class="section">
+            <h2>Personal Information</h2>
+            <ul>
+                <li>Research Achievements
+                    <ul>
+                        <li><a href="#">Google Scholar (English only)</a></li>
+                        <li><a href="#">Research Repository</a></li>
+                    </ul>
+                </li>
+                <li><a href="#">Contact Address, etc.</a></li>
+            </ul>
+        </div>
+
+        <hr>
+
+        <div class="section">
+            <span class="links-title"><a href="#">My Links</a></span>
+            <ul>
+                <li>Link 1</li>
+                <li>Link 2</li>
+            </ul>
+            <a href="#">Example Laboratory Page</a>
+        </div>
+    </div>
 </body>
 </html>
