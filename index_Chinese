@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Youkai Wu's Homepage</title>
+    <title>吴幽凯 - 主页</title>
     <style>
         body {
             font-family: Arial, Helvetica, sans-serif;
@@ -30,9 +30,9 @@
             min-width: 300px;
         }
         .header-img {
-            width: 200px;      /* 控制宽度 */
-            height: auto;      /* 高度自动匹配比例 */
-            object-fit: cover; /* 可留或去掉，去掉更自然 */
+            width: 200px;
+            height: auto;
+            object-fit: cover;
             border: 1px solid #ccc;
             background: #eee;
             margin-left: 24px;
@@ -95,42 +95,32 @@
     <div class="container">
         <div class="header-area">
             <div class="header-text">
-                <h1>Youkai Wu</h1>
-                <div>Ph.D Student, NHH Norwegian School of Economics</div>
+                <h1>吴友凯</h1>
+                <div>博士研究生，挪威经济学院（NHH）</div>
                 <div class="lang-switch">
-                    [<a href="#">English</a> | <a href="#">中文</a> | <a href="#">日本語</a> | <a href="#">Norsk (lærer)</a>]
+                    [<a href="#">English</a> | <a href="#">中文</a> | <a href="#">日本語</a> | <a href="#">Norsk（lærer）</a>]
                 </div>
             </div>
-            <img class="header-img" src="Profile/Youkai.jpg" alt="Profile/">
-        </div>
-        <hr>
-
-        <div class="section">
-            <h2>Research</h2>
-            <ul>
-                <li><a href="recent_research.html">Publications</a>
-                    <ul>
-                        <li>Stochastic Modeling</li>
-                        <li>Deep Learning</li>
-                        <li>On-demand Mobility and Logistics</li>
-                    </ul>
-                </li>
-                <li>Research Interests:
-                    <ul>
-                        <li>Optimization, Algorithms, Machine Learning, etc.</li>
-                    </ul>
-                </li>
-            </ul>
+            <img class="header-img" src="Profile/Youkai.jpg" alt="个人照片">
         </div>
 
         <hr>
 
         <div class="section">
-            <h2>Personal Information</h2>
+            <h2>研究方向</h2>
             <ul>
-                <li>Research Achievements
+                <li>
+                    <a href="recent_research.html">发表论文</a>
                     <ul>
-                        <li><a href="https://scholar.google.com/citations?user=KqmBkNoAAAAJ&hl=en&oi=ao" target="_blank">Google Scholar (English only)</a></li>
+                        <li>随机建模</li>
+                        <li>深度学习</li>
+                        <li>按需出行与物流</li>
+                    </ul>
+                </li>
+                <li>
+                    研究兴趣：
+                    <ul>
+                        <li>优化、算法、机器学习等</li>
                     </ul>
                 </li>
             </ul>
@@ -139,10 +129,24 @@
         <hr>
 
         <div class="section">
-            <h2>My Links</h2>
+            <h2>个人信息</h2>
             <ul>
-                <li><a href="https://www.nhh.no/en/employees/faculty/youkai-wu/" target="_blank">Employment Profile at NHH</a></li>
-                <li><a href="www.linkedin.com/in/youkai-wu-86130b110/" target="_blank">LinkedIn</a></li>
+                <li>
+                    研究成果
+                    <ul>
+                        <li><a href="https://scholar.google.com/citations?user=KqmBkNoAAAAJ&hl=en&oi=ao" target="_blank">Google 学术（仅英文）</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+
+        <hr>
+
+        <div class="section">
+            <h2>相关链接</h2>
+            <ul>
+                <li><a href="https://www.nhh.no/en/employees/faculty/youkai-wu/" target="_blank">NHH 教职档案页面</a></li>
+                <li><a href="https://www.linkedin.com/in/youkai-wu-86130b110/" target="_blank">LinkedIn 主页</a></li>
             </ul>
         </div>
     </div>
