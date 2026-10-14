@@ -11,7 +11,8 @@ import re
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urljoin
+from bs4 import BeautifulSoup
 from urllib.request import Request, urlopen
 import json
 
@@ -19,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "recent_research.html"
 CANDIDATES = ROOT / "publication_candidates.md"
 API = "https://api.crossref.org/works"
+SCHOLAR_ID = "KqmBkNoAAAAJ"
+SCHOLAR_URL = f"https://scholar.google.com/citations?user={SCHOLAR_ID}&hl=en&pagesize=100"
 USER_AGENT = "YoukaiWu-Publications-Checker/1.0 (https://github.com/youkaiwujasper/youkaiwujasper.github.io)"
 
 # These DOIs already appear on the personal website.
@@ -83,7 +86,7 @@ def make_entry(existing: str, record: dict, doi: str, indent: str) -> str:
     """Preserve existing author emphasis while refreshing verified journal data."""
     parts = [part.strip() for part in BR_RE.split(existing)]
     if len(parts) < 4 or record.get("type") != "journal-article":
-        return f"{indent}<li>\n{existing.strip()}\n{indent}</li>"
+        return None
     authors = parts[0]
     title = plain(record.get("title")).rstrip(" .,;")
     journal = plain(record.get("container-title")).rstrip(" .,;")
@@ -93,7 +96,7 @@ def make_entry(existing: str, record: dict, doi: str, indent: str) -> str:
     year = KNOWN_YEARS.get(doi) or year_of(record)
     if not all((authors, title, journal, volume, locator, year)):
         # Do not remove manually curated details when Crossref is incomplete.
-        return f"{indent}<li>\n{existing.strip()}\n{indent}</li>"
+        return None
     venue = f"<i>{html.escape(journal)}</i>, {html.escape(volume)}"
     if issue:
         venue += f" ({html.escape(issue)})"
@@ -115,7 +118,8 @@ def update_existing(source: str, records: dict[str, dict]) -> str:
         doi = doi_in(m.group("body"))
         if not doi or doi not in records:
             return m.group(0)
-        return make_entry(m.group("body"), records[doi], doi, m.group("indent"))
+        proposed = make_entry(m.group("body"), records[doi], doi, m.group("indent"))
+        return proposed if proposed is not None else m.group(0)
 
     updated = LI_RE.sub(replace, source)
 
@@ -168,80 +172,237 @@ def exact_author(record: dict) -> bool:
     return False
 
 
-def get_candidates(page: str, records: dict[str, dict]) -> list[dict]:
-    params = urlencode({
-        "query.author": "Youkai Wu",
-        "filter": "from-pub-date:2024-01-01",
-        "rows": "100",
-        "select": "DOI,title,author,container-title,published,issued,type",
-    })
-    items = request_json(f"{API}?{params}")["message"]["items"]
-    existing_dois = set(KNOWN_YEARS)
-    existing_dois.update(d.lower() for d in DOI_RE.findall(page))
-    existing_titles = {norm_title(TAG_RE.sub("", li.group("body").split("<br>")[1]))
-                       for li in LI_RE.finditer(page) if "<br>" in li.group("body")}
-    found = {}
-    for record in items:
-        doi = plain(record.get("DOI")).lower()
-        title = plain(record.get("title"))
-        if (not doi or not title or not exact_author(record)
-                or doi in existing_dois or norm_title(title) in existing_titles):
-            continue
-        if record.get("type") not in ("journal-article", "proceedings-article", "posted-content"):
-            continue
-        found[doi] = record
-    return [found[key] for key in sorted(found)]
+
+# Manual aliases for titles that were substantially revised between a preprint
+# and the formally published version. These must not be inserted twice.
+TITLE_ALIASES = {
+    norm_title("Assessing On-Demand Mobility Services and Policy Impacts: A Case Study from Chengdu, China"),
+    norm_title("Assessing Autonomous Mobility-on-Demand Services and Policy Impacts: A Case Study of Chengdu, China"),
+}
 
 
-def render_candidates(items: list[dict]) -> str:
-    lines = [
-        "# Possible publications to review",
-        "",
-        "Crossref records with an exact **Youkai Wu** author-name match that are",
-        "not yet listed on the website. **These are NOT automatically verified**;",
-        "check title, coauthors and DOI before adding anything to the website.",
-        "Do not merge an entry into Journal Papers solely based on this report.",
-        "",
-    ]
-    if not items:
-        lines.append("No new candidates found in the Crossref search window.")
-    for record in items:
-        doi = plain(record.get("DOI")).lower()
-        authors = ", ".join(
-            (plain(a.get("given")) + " " + plain(a.get("family"))).strip()
-            for a in record.get("author", [])
-        )
-        lines.extend([
-            f"## {plain(record.get('title'))}",
-            "",
-            f"- Authors: {authors}",
-            f"- Venue: {plain(record.get('container-title')) or 'Not available'}",
-            f"- Year: {year_of(record) or 'Not available'}",
-            f"- Type: {plain(record.get('type'))}",
-            f"- DOI: https://doi.org/{doi}",
-            "",
-        ])
-    return "\n".join(lines).rstrip() + "\n"
+def scholar_publications() -> list[dict]:
+    """Fetch actual entries from the named Scholar profile, never author-name search.
+
+    Scholar offers no public API and may refuse bots. A failed or empty fetch must
+    abort the run so that missing data never authorizes an incorrect change.
+    """
+    all_papers = []
+    for offset in range(0, 1000, 100):
+        separator = "&"
+        url = f"{SCHOLAR_URL}{separator}cstart={offset}"
+        req = Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; academic-personal-site-check/1.0)",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        try:
+            with urlopen(req, timeout=35) as response:
+                soup = BeautifulSoup(response.read(), "html.parser")
+        except (HTTPError, URLError, TimeoutError) as exc:
+            raise RuntimeError(
+                "Google Scholar profile could not be accessed. "
+                "The site was NOT changed; re-run later or provide a reliable source."
+            ) from exc
+
+        profile_name = soup.select_one("#gsc_prf_in")
+        if not profile_name or "youkai wu" not in " ".join(
+            profile_name.get_text(" ", strip=True).casefold().split()
+        ):
+            raise RuntimeError("Google Scholar author identity could not be verified; no update performed.")
+        rows = soup.select("tr.gsc_a_tr")
+        if offset == 0 and not rows:
+            raise RuntimeError("Google Scholar returned no publication rows; no update performed.")
+        for row in rows:
+            anchor = row.select_one("a.gsc_a_at")
+            if anchor is None:
+                continue
+            title = " ".join(anchor.get_text(" ", strip=True).split())
+            if len(title) < 8:
+                continue
+            grays = row.select(".gs_gray")
+            authors = grays[0].get_text(" ", strip=True) if grays else ""
+            venue = grays[1].get_text(" ", strip=True) if len(grays) >= 2 else ""
+            year_node = row.select_one(".gsc_a_y")
+            year_text = year_node.get_text(" ", strip=True) if year_node else ""
+            found = re.search(r"\b(?:19|20)\d{2}\b", year_text)
+            year = int(found.group(0)) if found else None
+            paper_url = urljoin("https://scholar.google.com", anchor.get("href") or "")
+            all_papers.append({
+                "title": title,
+                "authors": authors,
+                "venue": venue,
+                "year": year,
+                "url": paper_url,
+            })
+        if len(rows) < 100:
+            break
+    else:
+        raise RuntimeError("Google Scholar pagination limit reached; no changes written.")
+    if not all_papers:
+        raise RuntimeError("Google Scholar profile empty or blocked; no changes written.")
+    unique = {}
+    for entry in all_papers:
+        unique.setdefault(norm_title(entry["title"]), entry)
+    return list(unique.values())
+
+
+def crossref_match(title: str) -> dict | None:
+    """Use Crossref only to enrich a publication already on the Scholar profile."""
+    params = urlencode({"query.title": title, "rows": "8"})
+    try:
+        records = request_json(f"{API}?{params}")["message"]["items"]
+    except (RuntimeError, KeyError):
+        return None
+    options = []
+    for record in records:
+        if record.get("type") not in {"journal-article", "proceedings-article", "posted-content"}:
+            continue
+        if norm_title(plain(record.get("title"))) != norm_title(title):
+            continue
+        if not exact_author(record):
+            continue
+        options.append(record)
+    priority = {"journal-article": 0, "proceedings-article": 1, "posted-content": 2}
+    return min(options, key=lambda r: priority.get(r["type"], 9)) if options else None
+
+
+def exact_author(record: dict) -> bool:
+    for author in record.get("author", []):
+        given = plain(author.get("given")).casefold()
+        family = plain(author.get("family")).casefold()
+        if (given == "youkai" and family == "wu") or (given == "wu" and family == "youkai"):
+            return True
+    return False
+
+
+def existing_titles(source: str) -> set[str]:
+    titles = set(TITLE_ALIASES)
+    for match in LI_RE.finditer(source):
+        chunks = BR_RE.split(match.group("body"))
+        if len(chunks) > 1:
+            titles.add(norm_title(TAG_RE.sub("", chunks[1])))
+    return titles
+
+
+def authors_html(record: dict | None, paper: dict) -> str:
+    if record and record.get("author"):
+        names = []
+        for author in record["author"]:
+            given = plain(author.get("given"))
+            family = plain(author.get("family"))
+            name = (given + " " + family).strip()
+            if given.casefold() == "youkai" and family.casefold() == "wu":
+                names.append("<b>Youkai Wu</b>")
+            else:
+                names.append(html.escape(name))
+        return ", ".join(names)
+    # Scholar sometimes abbreviates the authors in its table.
+    result = html.escape(paper["authors"])
+    result = re.sub(r"\bYoukai Wu\b", "<b>Youkai Wu</b>", result, flags=re.I)
+    return result or "<b>Youkai Wu</b>"
+
+
+def category_of(record: dict | None, venue: str) -> str:
+    if record:
+        return {"journal-article": "journal", "proceedings-article": "conference",
+                "posted-content": "working"}.get(record.get("type"), "working")
+    venue = venue.casefold()
+    if any(token in venue for token in ("arxiv", "preprint", "working paper", "ssrn", "research square")):
+        return "working"
+    if any(token in venue for token in ("proceedings", "conference", "symposium", "congress", "workshop")):
+        return "conference"
+    # When Scholar does not identify a journal unambiguously, use Working
+    # Papers rather than asserting that the work was peer reviewed.
+    return "working"
+
+
+def new_entry(paper: dict, record: dict | None) -> tuple[str, str]:
+    doi = plain(record.get("DOI")).lower() if record else ""
+    title = plain(record.get("title")) if record else paper["title"]
+    journal = plain(record.get("container-title")) if record else paper["venue"]
+    year = (KNOWN_YEARS.get(doi) or year_of(record)) if record else paper["year"]
+    year_part = str(year) if year else "n.d."
+    category = category_of(record, paper["venue"])
+    venue = f"<i>{html.escape(journal)}</i>" if journal else "Google Scholar"
+    if record and category == "journal":
+        volume = plain(record.get("volume"))
+        issue = plain(record.get("issue"))
+        locator = plain(record.get("article-number")) or plain(record.get("page"))
+        if volume:
+            venue += f", {html.escape(volume)}"
+        if issue:
+            venue += f" ({html.escape(issue)})"
+        if locator:
+            venue += f", {html.escape(locator)}"
+    venue += f", {year_part}."
+    url = f"https://doi.org/{doi}" if doi else paper["url"]
+    link = (f'DOI: <a href="{html.escape(url, quote=True)}" target="_blank" '
+            f'rel="noopener noreferrer">{html.escape(doi)}</a>' if doi else
+            f'<a href="{html.escape(url, quote=True)}" target="_blank" '
+            f'rel="noopener noreferrer">Google Scholar</a>')
+    return category, (
+        "            <li>\n"
+        f"                {authors_html(record, paper)},<br>\n"
+        f"                {html.escape(title.rstrip(' ,.;'))},<br>\n"
+        f"                {venue}<br>\n"
+        f"                {link}\n"
+        "            </li>"
+    )
+
+
+def insert_publication(source: str, category: str, entry: str) -> str:
+    pattern = re.compile(
+        rf'(<h2\s+id="{category}"[^>]*>.*?</h2>\s*<ul\s+class="pubs">)',
+        re.I | re.S,
+    )
+    match = pattern.search(source)
+    if match is None:
+        raise RuntimeError(f"Could not locate publication section: {category}")
+    # Remove the empty placeholder used in Working Papers, if present.
+    if category == "working":
+        tail = source[match.end():]
+        tail = re.sub(r"^\s*<li>\s*</li>", "", tail, count=1)
+        source = source[:match.end()] + tail
+        match = pattern.search(source)
+    return source[:match.end()] + "\n" + entry + source[match.end():]
 
 
 def main() -> None:
-    original = PAGE.read_text(encoding="utf-8")
-    seen = {d.lower() for d in DOI_RE.findall(original)}
-    targets = seen.intersection(KNOWN_YEARS)
-    if not targets:
-        raise RuntimeError("No known publication DOI found; check the website path/content.")
-    records = {doi: metadata(doi) for doi in sorted(targets)}
-    updated = update_existing(original, records)
-    candidates = get_candidates(updated, records)
-    if updated != original:
+    source = PAGE.read_text(encoding="utf-8")
+
+    # Verify the exact user-provided Scholar profile FIRST. If blocked or
+    # unexpectedly empty, abort instead of overwriting, adding, or merging.
+    papers = scholar_publications()
+    print(f"Verified Google Scholar profile {SCHOLAR_ID}: {len(papers)} publications.")
+
+    known = {doi.lower() for doi in DOI_RE.findall(source)}
+    records = {doi: metadata(doi) for doi in sorted(known)}
+    updated = update_existing(source, records)
+    known_titles = existing_titles(updated)
+
+    added = []
+    for paper in sorted(papers, key=lambda p: (p["year"] or 0, p["title"].casefold())):
+        nt = norm_title(paper["title"])
+        if nt in known_titles:
+            continue
+        record = crossref_match(paper["title"])
+        doi = plain(record.get("DOI")).lower() if record else ""
+        if doi and doi in known:
+            continue
+        category, block = new_entry(paper, record)
+        updated = insert_publication(updated, category, block)
+        known_titles.add(nt)
+        if doi:
+            known.add(doi)
+        added.append((category, paper["title"]))
+
+    if updated != source:
         PAGE.write_text(updated, encoding="utf-8")
-        print("Updated known publication metadata and/or journal placement.")
-    report = render_candidates(candidates)
-    if not CANDIDATES.exists() or CANDIDATES.read_text(encoding="utf-8") != report:
-        CANDIDATES.write_text(report, encoding="utf-8")
-        print(f"Saved {len(candidates)} publication candidates for review.")
+        print(f"Updated website. New Scholar-listed publications: {len(added)}")
+        for category, title in added:
+            print(f"  [{category}] {title}")
     else:
-        print("No change in publication candidates.")
+        print("Website publications already up to date.")
 
 
 if __name__ == "__main__":
