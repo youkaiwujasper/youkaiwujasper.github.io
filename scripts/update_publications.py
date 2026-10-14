@@ -136,7 +136,8 @@ def update_existing(source: str, records: dict[str, dict]) -> str:
                 kept = kept[:li.start()] + kept[li.end():]
         if moving:
             if "<li" not in kept.lower():
-                updated = updated[:publishing.start()] + updated[publishing.end():]
+                heading_indent = re.match(r"^[ \\t]*", publishing.group("all")).group(0)
+                updated = updated[:publishing.start()] + heading_indent + updated[publishing.end():]
             else:
                 replacement = publishing.group("all").replace(publishing.group("body"), kept, 1)
                 updated = updated[:publishing.start()] + replacement + updated[publishing.end():]
@@ -146,7 +147,13 @@ def update_existing(source: str, records: dict[str, dict]) -> str:
             )
             if not journal:
                 raise RuntimeError("Cannot locate Journal Papers section")
-            new_items = "\n" + "\n".join("            " + block.replace("\n", "\n            ").lstrip() for block in moving)
+            new_items = "\\n" + "\\n".join(
+                "\\n".join(
+                    ("            " if i in (0, len(lines) - 1) else "                ") + line.strip()
+                    for i, line in enumerate(lines)
+                )
+                for lines in (block.splitlines() for block in moving)
+            )
             updated = updated[:journal.end()] + new_items + updated[journal.end():]
 
     return updated
