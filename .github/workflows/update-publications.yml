@@ -2,6 +2,10 @@ name: Check publications
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/update-publications.yml'
+      - 'scripts/update_publications.py'
   schedule:
     # 09:00 Europe/Oslo (GitHub timezone-aware schedule).
     - cron: '0 9 * * 1'
@@ -26,7 +30,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Query verified DOI metadata and possible new publications
+      - name: Install Google Scholar HTML parser
+        run: python -m pip install beautifulsoup4==4.14.2
+      - name: Check Python syntax
+        run: python -m py_compile scripts/update_publications.py
+      - name: Query Google Scholar profile and enrich metadata via Crossref
         run: python scripts/update_publications.py
       - name: Propose changes for review
         id: cpr
@@ -36,16 +44,16 @@ jobs:
           commit-message: 'Check publication metadata'
           branch: automation/publications
           delete-branch: true
-          title: 'Review publication updates'
+          title: 'Publish verified Google Scholar publications'
           body: |
-            This automatically generated PR checks Crossref metadata for known DOIs
-            and lists possible new publications in publication_candidates.md.
+            Verified against the explicitly configured Google Scholar author profile:
+            https://scholar.google.com/citations?user=KqmBkNoAAAAJ
 
-            Please verify all author matches, titles, venues, and years before merging.
-            Candidates are never automatically added to the published website.
+            New publications found on that profile are automatically added;
+            Crossref enriches verified records with DOI and journal metadata.
+            Auto-merge is enabled. If Scholar access fails, this workflow fails closed.
           add-paths: |
             recent_research.html
-            publication_candidates.md
       - name: Merge verified metadata changes automatically
         id: automerge
         if: steps.cpr.outputs.pull-request-number != ''
@@ -53,10 +61,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
         run: |
-          if ! grep -Fxq 'No new candidates found in the Crossref search window.' publication_candidates.md; then
-            echo 'Possible new publications detected: PR remains open for review.'
-            exit 0
-          fi
           gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch
           echo 'merged=true' >> "$GITHUB_OUTPUT"
       - name: Request GitHub Pages rebuild
