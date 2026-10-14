@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  pages: write
 
 concurrency:
   group: publication-check
@@ -27,7 +28,8 @@ jobs:
           python-version: '3.12'
       - name: Query verified DOI metadata and possible new publications
         run: python scripts/update_publications.py
-      - name: Propose changes for manual review
+      - name: Propose changes for review
+        id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -44,3 +46,23 @@ jobs:
           add-paths: |
             recent_research.html
             publication_candidates.md
+      - name: Merge verified metadata changes automatically
+        id: automerge
+        if: steps.cpr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          if ! grep -Fxq 'No new candidates found in the Crossref search window.' publication_candidates.md; then
+            echo 'Possible new publications detected: PR remains open for review.'
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch
+          echo 'merged=true' >> "$GITHUB_OUTPUT"
+      - name: Request GitHub Pages rebuild
+        if: steps.automerge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Merges made by GITHUB_TOKEN do not automatically trigger a Pages build.
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds"
