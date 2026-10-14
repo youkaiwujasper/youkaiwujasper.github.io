@@ -1,0 +1,46 @@
+name: Check publications
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 Europe/Oslo (GitHub timezone-aware schedule).
+    - cron: '0 9 * * 1'
+      timezone: 'Europe/Oslo'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: publication-check
+  cancel-in-progress: false
+
+jobs:
+  check-publications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Query verified DOI metadata and possible new publications
+        run: python scripts/update_publications.py
+      - name: Propose changes for manual review
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Check publication metadata'
+          branch: automation/publications
+          delete-branch: true
+          title: 'Review publication updates'
+          body: |
+            This automatically generated PR checks Crossref metadata for known DOIs
+            and lists possible new publications in publication_candidates.md.
+
+            Please verify all author matches, titles, venues, and years before merging.
+            Candidates are never automatically added to the published website.
+          add-paths: |
+            recent_research.html
+            publication_candidates.md
