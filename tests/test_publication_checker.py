@@ -45,6 +45,62 @@ class PublicationChecks(unittest.TestCase):
         self.assertFalse(pubs.title_already_listed(
             "Completely Different Research", listed))
 
+    def test_transport_field_auto_verifies(self):
+        authors = [{"given": "Youkai", "family": "Wu"}]
+        self.assertTrue(pubs.identity_verified(
+            paper(authors, "Dynamic vehicle routing and on-demand mobility services")))
+
+    def test_logistics_and_optimization_auto_verifies(self):
+        authors = [{"given": "Youkai", "family": "Wu"}]
+        self.assertTrue(pubs.identity_verified(
+            paper(authors, "Stochastic optimization for logistics planning")))
+
+    def test_operations_research_journal_auto_verifies(self):
+        authors = [{"given": "Youkai", "family": "Wu"}]
+        record = paper(authors, "Study of dynamic resource allocation")
+        record["container-title"] = ["Operations Research"]
+        self.assertTrue(pubs.identity_verified(record))
+
+    def test_algorithm_alone_does_not_verify(self):
+        authors = [{"given": "Youkai", "family": "Wu"}]
+        record = paper(authors, "Algorithm for tumor image segmentation")
+        record["container-title"] = ["Medical Image Analysis"]
+        self.assertFalse(pubs.identity_verified(record))
+
+    def test_norwegian_academic_affiliation_auto_verifies(self):
+        authors = [{"given": "Youkai", "family": "Wu",
+                    "affiliation": [{"name": "University of Bergen, Norway"}]}]
+        record = paper(authors, "Generic network study")
+        record["container-title"] = ["Applied Mathematics"]
+        self.assertTrue(pubs.identity_verified(record))
+
+    def test_sichuan_university_affiliation_auto_verifies(self):
+        authors = [{"given": "Youkai", "family": "Wu",
+                    "affiliation": [{"name": "School of Business, Sichuan University"}]}]
+        record = paper(authors, "Generic network study")
+        record["container-title"] = ["Applied Mathematics"]
+        self.assertTrue(pubs.identity_verified(record))
+
+    def test_not_any_sichuan_affiliation(self):
+        authors = [{"given": "Youkai", "family": "Wu",
+                    "affiliation": [{"name": "Sichuan Agricultural University"}]}]
+        record = paper(authors, "Medical image analysis")
+        record["container-title"] = ["Health Informatics"]
+        self.assertFalse(pubs.identity_verified(record))
+
+    def test_coauthor_affiliation_does_not_verify_user(self):
+        authors = [{"given": "Youkai", "family": "Wu"},
+                   {"given": "Unknown", "family": "Person",
+                    "affiliation": [{"name": "University of Bergen, Norway"}]}]
+        record = paper(authors, "Medical image analysis")
+        record["container-title"] = ["Health Informatics"]
+        self.assertFalse(pubs.identity_verified(record))
+
+    def test_without_exact_author_cannot_verify_topic(self):
+        authors = [{"given": "Youka", "family": "Wu"}]
+        self.assertFalse(pubs.identity_verified(
+            paper(authors, "Freight transport logistics optimization")))
+
     def test_entry_category_and_doi(self):
         record = paper([{"given": "Youkai", "family": "Wu"},
                         {"given": "Haifan", "family": "Tang"}])
