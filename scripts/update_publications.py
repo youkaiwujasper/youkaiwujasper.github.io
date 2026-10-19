@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check publication metadata and prepare reviewable website changes.
+"""Automatically update publications from Crossref with strict author verification.
 
-Only known DOI records are automatically updated in HTML. Unrecognized records
-are listed for human review; an author-name match is not proof of authorship.
+A name match alone cannot verify authorship. New records need exact author name
+and a recognized collaborator or explicit matching academic affiliation.
 """
 from __future__ import annotations
 
@@ -10,22 +10,18 @@ import html
 import re
 import time
 from pathlib import Path
+from difflib import SequenceMatcher
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urljoin
-from bs4 import BeautifulSoup
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 import json
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "recent_research.html"
-CANDIDATES = ROOT / "publication_candidates.md"
 API = "https://api.crossref.org/works"
-SCHOLAR_ID = "KqmBkNoAAAAJ"
-SCHOLAR_URL = f"https://scholar.google.com/citations?user={SCHOLAR_ID}&hl=en&pagesize=100"
 USER_AGENT = "YoukaiWu-Publications-Checker/1.0 (https://github.com/youkaiwujasper/youkaiwujasper.github.io)"
 
-# These DOIs already appear on the personal website.
-# Add a verified DOI here after manually approving a new publication.
+# Known authoritative publication years (online publication may precede volume year).
 KNOWN_YEARS = {
     "10.1016/j.tranpol.2026.104416": 2026,
     "10.1016/j.asoc.2024.112582": 2025,
@@ -181,126 +177,89 @@ TITLE_ALIASES = {
 }
 
 
-# Give intermittent network errors or rate limits time to clear. Repeated 403
-# responses normally mean Scholar is blocking the runner; fail safely rather
-# than bypassing the restriction or guessing which papers to publish.
-SCHOLAR_RETRY_DELAYS = (20, 60)  # three total attempts, up to 80s wait
+# Known exact collaborators in the existing publication list. Combine with
+# exact Youkai Wu author match to avoid unrelated authors with the same name.
+TRUSTED_COAUTHORS = {
+    ("zhaoxia", "guo"),
+    ("haifan", "tang"),
+    ("guangxin", "ou"),
+    ("weiwei", "le"),
+    ("fansheng", "zhou"),
+    ("stein", "wallace"),
+    ("feng", "guo"),
+}
+TRUSTED_AFFILIATIONS = (
+    "nhh", "norwegian school of economics", "sichuan university",
+)
+ACCEPTED_TYPES = {"journal-article", "proceedings-article"}
+NEW_PUBLICATION_LOOKBACK = "2018-01-01"
 
 
-def fetch_scholar_page(url: str) -> BeautifulSoup:
-    attempts = len(SCHOLAR_RETRY_DELAYS) + 1
-    for attempt in range(1, attempts + 1):
-        req = Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; academic-personal-site-check/1.0)",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        try:
-            with urlopen(req, timeout=35) as response:
-                return BeautifulSoup(response.read(), "html.parser")
-        except HTTPError as exc:
-            if exc.code not in (403, 429, 500, 502, 503, 504):
-                raise RuntimeError(
-                    f"Google Scholar returned HTTP {exc.code}; no website changes made."
-                ) from exc
-            reason = f"HTTP {exc.code}"
-        except (URLError, TimeoutError) as exc:
-            reason = str(exc)
-
-        if attempt == attempts:
-            raise RuntimeError(
-                f"Google Scholar refused or failed after {attempts} attempts "
-                f"(last error: {reason}). No website changes made."
-            )
-        delay = SCHOLAR_RETRY_DELAYS[attempt - 1]
-        print(
-            f"Google Scholar request {attempt}/{attempts} failed ({reason}); "
-            f"retrying in {delay} seconds...",
-            flush=True,
-        )
-        time.sleep(delay)
-    raise AssertionError("unreachable")
+def author_pair(author: dict) -> tuple[str, str]:
+    given = plain(author.get("given")).casefold()
+    family = plain(author.get("family")).casefold()
+    first = re.sub(r"[^a-z]", " ", given).split()
+    surname = re.sub(r"[^a-z]", "", family)
+    return (first[0] if first else "", surname)
 
 
-def scholar_publications() -> list[dict]:
-    """Fetch actual entries from the named Scholar profile, never author-name search.
-
-    Scholar offers no public API and may refuse bots. A failed or empty fetch must
-    abort the run so that missing data never authorizes an incorrect change.
-    """
-    all_papers = []
-    for offset in range(0, 1000, 100):
-        url = f"{SCHOLAR_URL}&cstart={offset}"
-        soup = fetch_scholar_page(url)
-
-        profile_name = soup.select_one("#gsc_prf_in")
-        if not profile_name or "youkai wu" not in " ".join(
-            profile_name.get_text(" ", strip=True).casefold().split()
-        ):
-            raise RuntimeError("Google Scholar author identity could not be verified; no update performed.")
-        rows = soup.select("tr.gsc_a_tr")
-        if offset == 0 and not rows:
-            raise RuntimeError("Google Scholar returned no publication rows; no update performed.")
-        for row in rows:
-            anchor = row.select_one("a.gsc_a_at")
-            if anchor is None:
-                continue
-            title = " ".join(anchor.get_text(" ", strip=True).split())
-            if len(title) < 8:
-                continue
-            grays = row.select(".gs_gray")
-            authors = grays[0].get_text(" ", strip=True) if grays else ""
-            venue = grays[1].get_text(" ", strip=True) if len(grays) >= 2 else ""
-            year_node = row.select_one(".gsc_a_y")
-            year_text = year_node.get_text(" ", strip=True) if year_node else ""
-            found = re.search(r"\b(?:19|20)\d{2}\b", year_text)
-            year = int(found.group(0)) if found else None
-            paper_url = urljoin("https://scholar.google.com", anchor.get("href") or "")
-            all_papers.append({
-                "title": title,
-                "authors": authors,
-                "venue": venue,
-                "year": year,
-                "url": paper_url,
-            })
-        if len(rows) < 100:
-            break
-    else:
-        raise RuntimeError("Google Scholar pagination limit reached; no changes written.")
-    if not all_papers:
-        raise RuntimeError("Google Scholar profile empty or blocked; no changes written.")
-    unique = {}
-    for entry in all_papers:
-        unique.setdefault(norm_title(entry["title"]), entry)
-    return list(unique.values())
-
-
-def crossref_match(title: str) -> dict | None:
-    """Use Crossref only to enrich a publication already on the Scholar profile."""
-    params = urlencode({"query.title": title, "rows": "8"})
-    try:
-        records = request_json(f"{API}?{params}")["message"]["items"]
-    except (RuntimeError, KeyError):
-        return None
-    options = []
-    for record in records:
-        if record.get("type") not in {"journal-article", "proceedings-article", "posted-content"}:
-            continue
-        if norm_title(plain(record.get("title"))) != norm_title(title):
-            continue
-        if not exact_author(record):
-            continue
-        options.append(record)
-    priority = {"journal-article": 0, "proceedings-article": 1, "posted-content": 2}
-    return min(options, key=lambda r: priority.get(r["type"], 9)) if options else None
-
-
-def exact_author(record: dict) -> bool:
-    for author in record.get("author", []):
-        given = plain(author.get("given")).casefold()
-        family = plain(author.get("family")).casefold()
-        if (given == "youkai" and family == "wu") or (given == "wu" and family == "youkai"):
-            return True
+def identity_verified(record: dict) -> bool:
+    """Reject same-name scholars without a matching collaboration or affiliation."""
+    if not exact_author(record):
+        return False
+    authors = record.get("author", [])
+    if any(author_pair(a) in TRUSTED_COAUTHORS for a in authors):
+        return True
+    for author in authors:
+        if author_pair(author) == ("youkai", "wu"):
+            for affiliation in author.get("affiliation", []):
+                if isinstance(affiliation, dict):
+                    name = plain(affiliation.get("name")).casefold()
+                else:
+                    name = plain(affiliation).casefold()
+                if any(aff in name for aff in TRUSTED_AFFILIATIONS):
+                    return True
     return False
+
+
+def crossref_publications() -> list[dict]:
+    """Query Crossref instead of the Google Scholar page (which blocks runners)."""
+    params = urlencode({
+        "query.author": "Youkai Wu",
+        "filter": f"from-pub-date:{NEW_PUBLICATION_LOOKBACK}",
+        "rows": "250",
+        "select": (
+            "DOI,title,author,type,container-title,volume,issue,"
+            "article-number,page,published,published-online,published-print,issued"
+        ),
+    })
+    data = request_json(f"{API}?{params}")["message"]
+    items = data.get("items", [])
+    if len(items) >= 250:
+        raise RuntimeError("Crossref results reached safety limit; use pagination before publishing.")
+    trusted = []
+    for record in items:
+        doi = plain(record.get("DOI")).lower()
+        if (not doi.startswith("10.") or record.get("type") not in ACCEPTED_TYPES
+                or not plain(record.get("title")) or not plain(record.get("container-title"))):
+            continue
+        if identity_verified(record):
+            trusted.append(record)
+    print(
+        f"Crossref returned {len(items)} author-query records; "
+        f"{len(trusted)} passed the identity checks.",
+        flush=True,
+    )
+    return trusted
+
+
+def title_already_listed(title: str, known_titles: set[str]) -> bool:
+    norm = norm_title(title)
+    if norm in known_titles:
+        return True
+    # Small punctuation and deposited-title differences must not create copies.
+    return any(SequenceMatcher(None, norm, old).ratio() >= 0.94
+               for old in known_titles if old)
 
 
 def existing_titles(source: str) -> set[str]:
@@ -398,37 +357,44 @@ def insert_publication(source: str, category: str, entry: str) -> str:
 def main() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
-    # Verify the exact user-provided Scholar profile FIRST. If blocked or
-    # unexpectedly empty, abort instead of overwriting, adding, or merging.
-    papers = scholar_publications()
-    print(f"Verified Google Scholar profile {SCHOLAR_ID}: {len(papers)} publications.")
-
+    # Failure to contact Crossref aborts before writing any output.
+    crossref_records = crossref_publications()
     known = {doi.lower() for doi in DOI_RE.findall(source)}
+    # Update metadata for every existing DOI even when it was not returned
+    # by the publication-date or author search.
     records = {doi: metadata(doi) for doi in sorted(known)}
     updated = update_existing(source, records)
     known_titles = existing_titles(updated)
 
     added = []
-    for paper in sorted(papers, key=lambda p: (p["year"] or 0, p["title"].casefold())):
-        nt = norm_title(paper["title"])
-        if nt in known_titles:
+    for record in sorted(
+        crossref_records,
+        key=lambda item: (year_of(item) or 0, plain(item.get("title")).casefold()),
+    ):
+        doi = plain(record.get("DOI")).lower()
+        title = plain(record.get("title"))
+        if doi in known or title_already_listed(title, known_titles):
             continue
-        record = crossref_match(paper["title"])
-        doi = plain(record.get("DOI")).lower() if record else ""
-        if doi and doi in known:
-            continue
+        paper = {
+            "title": title,
+            "venue": plain(record.get("container-title")),
+            "year": year_of(record),
+            "authors": "",
+            "url": f"https://doi.org/{doi}",
+        }
         category, block = new_entry(paper, record)
+        if category not in ("journal", "conference"):
+            continue
         updated = insert_publication(updated, category, block)
-        known_titles.add(nt)
-        if doi:
-            known.add(doi)
-        added.append((category, paper["title"]))
+        known_titles.add(norm_title(title))
+        known.add(doi)
+        added.append((category, title, doi))
 
     if updated != source:
         PAGE.write_text(updated, encoding="utf-8")
-        print(f"Updated website. New Scholar-listed publications: {len(added)}")
-        for category, title in added:
-            print(f"  [{category}] {title}")
+        print(f"Website updated, newly verified Crossref publications: {len(added)}")
+        for category, title, doi in added:
+            print(f"  [{category}] {title} — https://doi.org/{doi}")
     else:
         print("Website publications already up to date.")
 
