@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/update-publications.yml'
       - 'scripts/update_publications.py'
+      - 'tests/test_publication_checker.py'
   schedule:
     # 09:00 Europe/Oslo (GitHub timezone-aware schedule).
     - cron: '0 9 * * 1'
@@ -30,11 +31,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install Google Scholar HTML parser
-        run: python -m pip install beautifulsoup4==4.14.2
       - name: Check Python syntax
         run: python -m py_compile scripts/update_publications.py
-      - name: Query Google Scholar profile and enrich metadata via Crossref
+      - name: Test author and research-area matching
+        run: python -m unittest discover -s tests -v
+      - name: Query Crossref and update verified publications
         run: python scripts/update_publications.py
       - name: Propose changes for review
         id: cpr
@@ -44,14 +45,13 @@ jobs:
           commit-message: 'Check publication metadata'
           branch: automation/publications
           delete-branch: true
-          title: 'Publish verified Google Scholar publications'
+          title: 'Publish verified Crossref publications'
           body: |
-            Verified against the explicitly configured Google Scholar author profile:
-            https://scholar.google.com/citations?user=KqmBkNoAAAAJ
-
-            New publications found on that profile are automatically added;
-            Crossref enriches verified records with DOI and journal metadata.
-            Auto-merge is enabled. If Scholar access fails, this workflow fails closed.
+            Crossref searches for the exact Youkai Wu author name.
+            New papers must also match trusted research areas (operations research,
+            optimization, logistics, transportation), confirmed coauthors,
+            or Sichuan University/Norwegian research affiliations.
+            The automated checks run before auto-merging updates.
           add-paths: |
             recent_research.html
       - name: Merge verified metadata changes automatically
