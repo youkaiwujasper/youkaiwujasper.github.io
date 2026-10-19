@@ -26,7 +26,9 @@ class PublicationChecks(unittest.TestCase):
     def test_same_name_alone_is_not_enough(self):
         authors = [{"given": "Youkai", "family": "Wu"},
                    {"given": "Unrelated", "family": "Researcher"}]
-        self.assertFalse(pubs.identity_verified(paper(authors)))
+        record = paper(authors, "A molecular genetics study")
+        record["container-title"] = ["Journal of Cell Biology"]
+        self.assertFalse(pubs.identity_verified(record))
 
     def test_same_name_with_nhh_affiliation(self):
         authors = [{"given": "Youkai", "family": "Wu",
