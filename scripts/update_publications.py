@@ -181,6 +181,46 @@ TITLE_ALIASES = {
 }
 
 
+# Give intermittent network errors or rate limits time to clear. Repeated 403
+# responses normally mean Scholar is blocking the runner; fail safely rather
+# than bypassing the restriction or guessing which papers to publish.
+SCHOLAR_RETRY_DELAYS = (20, 60)  # three total attempts, up to 80s wait
+
+
+def fetch_scholar_page(url: str) -> BeautifulSoup:
+    attempts = len(SCHOLAR_RETRY_DELAYS) + 1
+    for attempt in range(1, attempts + 1):
+        req = Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; academic-personal-site-check/1.0)",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        try:
+            with urlopen(req, timeout=35) as response:
+                return BeautifulSoup(response.read(), "html.parser")
+        except HTTPError as exc:
+            if exc.code not in (403, 429, 500, 502, 503, 504):
+                raise RuntimeError(
+                    f"Google Scholar returned HTTP {exc.code}; no website changes made."
+                ) from exc
+            reason = f"HTTP {exc.code}"
+        except (URLError, TimeoutError) as exc:
+            reason = str(exc)
+
+        if attempt == attempts:
+            raise RuntimeError(
+                f"Google Scholar refused or failed after {attempts} attempts "
+                f"(last error: {reason}). No website changes made."
+            )
+        delay = SCHOLAR_RETRY_DELAYS[attempt - 1]
+        print(
+            f"Google Scholar request {attempt}/{attempts} failed ({reason}); "
+            f"retrying in {delay} seconds...",
+            flush=True,
+        )
+        time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def scholar_publications() -> list[dict]:
     """Fetch actual entries from the named Scholar profile, never author-name search.
 
@@ -189,20 +229,8 @@ def scholar_publications() -> list[dict]:
     """
     all_papers = []
     for offset in range(0, 1000, 100):
-        separator = "&"
-        url = f"{SCHOLAR_URL}{separator}cstart={offset}"
-        req = Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; academic-personal-site-check/1.0)",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        try:
-            with urlopen(req, timeout=35) as response:
-                soup = BeautifulSoup(response.read(), "html.parser")
-        except (HTTPError, URLError, TimeoutError) as exc:
-            raise RuntimeError(
-                "Google Scholar profile could not be accessed. "
-                "The site was NOT changed; re-run later or provide a reliable source."
-            ) from exc
+        url = f"{SCHOLAR_URL}&cstart={offset}"
+        soup = fetch_scholar_page(url)
 
         profile_name = soup.select_one("#gsc_prf_in")
         if not profile_name or "youkai wu" not in " ".join(
