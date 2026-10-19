@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Automatically update publications from Crossref with strict author verification.
 
-A name match alone cannot verify authorship. New records need exact author name
-and a recognized collaborator or explicit matching academic affiliation.
+A name match alone cannot verify authorship. New records require an exact Youkai Wu author match plus relevant research,
+verified collaborators, or an affiliated Norwegian/Sichuan University institution.
 """
 from __future__ import annotations
 
@@ -188,9 +188,68 @@ TRUSTED_COAUTHORS = {
     ("stein", "wallace"),
     ("feng", "guo"),
 }
-TRUSTED_AFFILIATIONS = (
-    "nhh", "norwegian school of economics", "sichuan university",
-)
+# Require an affiliation of the actual Youkai Wu author, not an unrelated
+# coauthor. Norway-based institutions and Sichuan University are accepted.
+AFFILIATION_PATTERNS = tuple(re.compile(pattern, re.I) for pattern in (
+    r"\bsichuan university\b(?!\s+of\s+science)",
+    r"\bnorway\b",
+    r"\bnorwegian\b",
+    r"\bnorges?\b",
+    r"\bnhh\b",
+    r"\bntnu\b",
+    r"\buib\b",
+    r"\buit\b",
+    r"\bnorwegian school of economics\b",
+    r"\bnorwegian university of science and technology\b",
+    r"\buniversity of (?:bergen|oslo|stavanger|troms[oø]|agder)\b",
+    r"\buniversity of south.eastern norway\b",
+    r"\bsintef\b",
+    r"\bnorce\b",
+    r"\binstitute of transport economics\b",
+))
+
+# Domain-based auto-admission: match meaningful terms in the title, venue,
+# abstract or Crossref subject metadata. General words such as "algorithm",
+# "system", "data", or "learning" alone are deliberately insufficient.
+RESEARCH_PATTERNS = tuple(re.compile(pattern, re.I) for pattern in (
+    r"\boptimi[sz](?:ation|e|ing|ed|er|ers)\b",
+    r"\boperations? research\b",
+    r"\boperations? management\b",
+    r"\bmanagement science\b",
+    r"\bmathematical programming\b",
+    r"\bstochastic (?:programming|optimization|optimisation|modeling|modelling)\b",
+    r"\binteger programming\b",
+    r"\bmixed.integer\b",
+    r"\blinear programming\b",
+    r"\bbranch.and.(?:price|cut|bound)\b",
+    r"\bcolumn generation\b",
+    r"\bvehicle routing\b",
+    r"\brouting\b",
+    r"\bscheduling\b",
+    r"\btimetabl(?:ing|e)\b",
+    r"\blogistics\b",
+    r"\bsupply.chain\b",
+    r"\bfreight\b",
+    r"\btransport(?:ation)?\b",
+    r"\btraffic\b",
+    r"\btransit\b",
+    r"\bmobility\b",
+    r"\bpublic transport\b",
+    r"\bdispatch(?:ing)?\b",
+    r"\bride.shar(?:e|ing)\b",
+    r"\bride.hail(?:ing)?\b",
+    r"\be.hail(?:ing)?\b",
+    r"\btaxi(?:s)?\b",
+    r"\bferr(?:y|ies)\b",
+    r"\bmaritime\b",
+    r"\bshipping\b",
+    r"\bpassenger(?:s)?\b",
+    r"\bon.demand delivery\b",
+    r"\blast.mile\b",
+    r"\bdelivery platform\b",
+    r"\bfood delivery\b",
+    r"\bwarehous(?:e|ing)\b",
+))
 ACCEPTED_TYPES = {"journal-article", "proceedings-article"}
 NEW_PUBLICATION_LOOKBACK = "2018-01-01"
 
@@ -203,54 +262,77 @@ def author_pair(author: dict) -> tuple[str, str]:
     return (first[0] if first else "", surname)
 
 
+def research_relevant(record: dict) -> bool:
+    parts = [
+        plain(record.get("title")),
+        plain(record.get("container-title")),
+        plain(record.get("subject")),
+        plain(record.get("abstract")),
+    ]
+    searchable = " ".join(parts)
+    return any(pattern.search(searchable) for pattern in RESEARCH_PATTERNS)
+
+
 def identity_verified(record: dict) -> bool:
-    """Reject same-name scholars without a matching collaboration or affiliation."""
+    """Exact author plus coauthor OR relevant subject OR matched affiliation."""
     if not exact_author(record):
         return False
+
     authors = record.get("author", [])
-    if any(author_pair(a) in TRUSTED_COAUTHORS for a in authors):
+    if any(author_pair(author) in TRUSTED_COAUTHORS for author in authors):
         return True
+
     for author in authors:
         if author_pair(author) == ("youkai", "wu"):
             for affiliation in author.get("affiliation", []):
                 if isinstance(affiliation, dict):
-                    name = plain(affiliation.get("name")).casefold()
+                    name = plain(affiliation.get("name"))
                 else:
-                    name = plain(affiliation).casefold()
-                if any(aff in name for aff in TRUSTED_AFFILIATIONS):
+                    name = plain(affiliation)
+                if any(pattern.search(name) for pattern in AFFILIATION_PATTERNS):
                     return True
-    return False
+
+    return research_relevant(record)
 
 
 def crossref_publications() -> list[dict]:
-    """Query Crossref instead of the Google Scholar page (which blocks runners)."""
-    params = urlencode({
-        "query.author": "Youkai Wu",
-        "filter": f"from-pub-date:{NEW_PUBLICATION_LOOKBACK}",
-        "rows": "250",
-        "select": (
-            "DOI,title,author,type,container-title,volume,issue,"
-            "article-number,page,published,published-online,published-print,issued"
-        ),
-    })
-    data = request_json(f"{API}?{params}")["message"]
-    items = data.get("items", [])
-    if len(items) >= 250:
-        raise RuntimeError("Crossref results reached safety limit; use pagination before publishing.")
-    trusted = []
-    for record in items:
+    """Fetch likely Crossref works, then require strict full-name verification."""
+    all_items = []
+    rows = 150
+    # Crossref author queries are fuzzy; inspect several relevance-ranked
+    # pages without stopping early just because one page is full.
+    for page in range(6):
+        params = urlencode({
+            "query.author": "Youkai Wu",
+            "filter": f"from-pub-date:{NEW_PUBLICATION_LOOKBACK}",
+            "rows": str(rows),
+            "offset": str(page * rows),
+            "select": (
+                "DOI,title,author,type,container-title,volume,issue,"
+                "article-number,page,published,published-online,"
+                "published-print,issued,subject,abstract"
+            ),
+        })
+        result = request_json(f"{API}?{params}")["message"]
+        items = result.get("items", [])
+        all_items.extend(items)
+        if len(items) < rows:
+            break
+
+    trusted = {}
+    for record in all_items:
         doi = plain(record.get("DOI")).lower()
         if (not doi.startswith("10.") or record.get("type") not in ACCEPTED_TYPES
                 or not plain(record.get("title")) or not plain(record.get("container-title"))):
             continue
         if identity_verified(record):
-            trusted.append(record)
+            trusted[doi] = record
     print(
-        f"Crossref returned {len(items)} author-query records; "
-        f"{len(trusted)} passed the identity checks.",
+        f"Crossref inspected {len(all_items)} author-query records; "
+        f"{len(trusted)} passed author and field/affiliation/coauthor checks.",
         flush=True,
     )
-    return trusted
+    return list(trusted.values())
 
 
 def title_already_listed(title: str, known_titles: set[str]) -> bool:
